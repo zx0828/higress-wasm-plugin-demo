@@ -19,6 +19,7 @@
 *   `spec.yaml`: 插件元数据，定义了 Higress 控制台的可视化配置表单。
 *   `fast-deploy.sh`: **推荐开发模式**。直接编译并拷贝 `.wasm` 到本地 `higress-ai` 容器。
 *   `deploy-oci.sh`: **生产部署模式**。构建符合 OCI 规范的 Docker 镜像并推送到仓库。
+*   `deploy-http.sh`: **HTTP 分发模式**。编译并移动到 `plugin-server` 托管目录。
 *   `wasmplugin.yaml`: Kubernetes 部署参考模板。
 
 ## 快速开始 (Quick Start)
@@ -34,7 +35,16 @@ chmod +x fast-deploy.sh
 
 脚本会将插件拷贝至容器的 `/tmp/higress-wasm-plugin-demo.wasm`，您只需在控制台配置该文件路径即可。
 
-### 2. OCI 镜像部署
+### 2. HTTP 插件服务器部署
+
+运行以下脚本，将插件托管到私有 HTTP 服务器：
+
+```bash
+chmod +x deploy-http.sh
+./deploy-http.sh
+```
+
+### 3. OCI 镜像部署
 
 修改 `deploy-oci.sh` 中的 `REGISTRY` 地址，然后运行：
 
