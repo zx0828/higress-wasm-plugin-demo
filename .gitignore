@@ -1,0 +1,9 @@
+# 忽略编译产物
+main.wasm
+plugin.wasm
+
+# 忽略本地临时文件
+.idea/
+*.tar.gz
+oci-layout
+repositories

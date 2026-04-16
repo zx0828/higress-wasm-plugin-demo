@@ -1,0 +1,52 @@
+# WasmPlugin CRD - Binds the WASM plugin to the 'test' route
+# Apply this YAML to trigger the plugin on the test route
+apiVersion: extensions.higress.io/v1alpha1
+kind: WasmPlugin
+metadata:
+  name: higress-wasm-plugin-demo
+  namespace: higress-system  # Higress system namespace
+spec:
+  # Plugin image URL - replace with your actual registry URL
+  url: oci://your-registry.com/your-project/higress-wasm-plugin-demo:v1.0.0
+  
+  # Plugin execution phase
+  # Options: AUTHN, AUTHZ, STATS, WAF, etc.
+  # For general request/response processing, use default
+  phase: STATS
+  
+  # Priority (lower number = higher priority)
+  priority: 100
+  
+  # Default configuration passed to the plugin
+  # This JSON will be parsed by the plugin's OnPluginStart
+  defaultConfig: |
+    {
+      "clientId": "global-client-id",
+      "secretId": "global-secret-id",
+      "whiteList": ["127.0.0.1", "192.168.0.0/16"],
+      "message": "Hello from Higress WASM Plugin!"
+    }
+  
+  # Match rules - bind to specific routes
+  # This is how the plugin is triggered ONLY on the 'test' route
+  matchRules:
+    - config: |
+        {
+          "clientId": "route-specific-client-id",
+          "secretId": "route-specific-secret-id",
+          "message": "Test Route Response"
+        }
+      # Ingress name - your route name in Higress
+      # Replace 'test-ingress' with your actual ingress resource name
+      ingress:
+        - higress-system/test-ingress  # namespace/ingress-name
+  
+  # Optional: Match by domain
+  # matchRules:
+  #   - config: |
+  #       { "message": "Domain-specific config" }
+  #     domain:
+  #       - "example.com"
+  
+  # Optional: Match all routes (global)
+  # defaultConfig applies to all routes not matched by matchRules

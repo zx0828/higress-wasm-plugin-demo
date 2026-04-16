@@ -1,0 +1,50 @@
+apiVersion: 1.0.0
+info:
+  category: security
+  name: higress-wasm-plugin-demo
+  title: 签名与白名单 Demo
+  title-i18n:
+    zh-CN: 签名与白名单 Demo
+  description: 一个支持 ClientId/SecretId 注入、基于 Body 的签名计算以及 IP 白名单跳过的示例插件。
+  x-description-i18n:
+    zh-CN: 该插件实现了 ClientId/SecretId 注入、基于请求体内容的 MD5 签名计算，并支持通过 IP 白名单跳过签名校验。
+openAPIV3Schema:
+  type: object
+  properties:
+    clientId:
+      type: string
+      title: Client ID
+      x-title-i18n:
+        zh-CN: 客户 ID (ClientId)
+      description: The unique identifier for the client.
+      x-description-i18n:
+        zh-CN: 用于标识调用方的唯一 ID
+      default: "default-client"
+    secretId:
+      type: string
+      title: Secret ID
+      x-title-i18n:
+        zh-CN: 签名密钥 (SecretId)
+      description: The private key for digital signature.
+      x-description-i18n:
+        zh-CN: 用于计算数字签名的私钥
+      default: "default-secret"
+    whiteList:
+      type: array
+      title: White List
+      x-title-i18n:
+        zh-CN: 白名单列表
+      items:
+        type: string
+      description: IP addresses or CIDR blocks to skip signature validation.
+      x-description-i18n:
+        zh-CN: 允许跳过签名校验的 IP 地址或网段 (支持 CIDR)
+    message:
+      type: string
+      title: Message
+      x-title-i18n:
+        zh-CN: 响应提示信息
+      description: The response message after plugin processing.
+      x-description-i18n:
+        zh-CN: 插件处理后的响应消息内容
+      default: "processed by wasm"
