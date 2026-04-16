@@ -35,16 +35,7 @@ chmod +x fast-deploy.sh
 
 脚本会将插件拷贝至容器的 `/tmp/higress-wasm-plugin-demo.wasm`，您只需在控制台配置该文件路径即可。
 
-### 2. HTTP 插件服务器部署
-
-运行以下脚本，将插件托管到私有 HTTP 服务器：
-
-```bash
-chmod +x deploy-http.sh
-./deploy-http.sh
-```
-
-### 3. OCI 镜像部署
+### 2. OCI 镜像部署
 
 修改 `deploy-oci.sh` 中的 `REGISTRY` 地址，然后运行：
 
