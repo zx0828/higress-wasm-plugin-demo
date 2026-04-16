@@ -4,7 +4,7 @@ set -e
 
 # --- 配置区 ---
 PLUGIN_NAME="higress-wasm-plugin-demo"
-VERSION="2.5.0"
+VERSION="2.6.0"
 BASE_DIR="/app/plugin-server"
 TARGET_DIR="${BASE_DIR}/${PLUGIN_NAME}/${VERSION}"
 SERVER_PORT="8085" # 宿主机访问端口

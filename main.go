@@ -15,7 +15,6 @@
 package main
 
 import (
-	"crypto/md5"
 	"fmt"
 	"strings"
 
@@ -26,13 +25,18 @@ import (
 	"github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
 	"github.com/zmap/go-iptree/iptree"
+
+	"higress-wasm-plugin-demo/pkg/sm3" // 使用内建高性能 SM3 包
 )
 
 func main() {}
 
+// calculateSign 使用国密 SM3 算法计算签名
 func calculateSign(clientId, body, secretId string) string {
+	// 拼接规则保持一致：clientId + body + secretId
 	signStr := fmt.Sprintf("%s%s%s", clientId, body, secretId)
-	return fmt.Sprintf("%x", md5.Sum([]byte(signStr)))
+	hash := sm3.Sum([]byte(signStr))
+	return fmt.Sprintf("%x", hash)
 }
 
 // --- 插件初始化 ---
@@ -59,7 +63,6 @@ func parseConfig(json gjson.Result, config *PluginConfig, log log.Log) error {
 	config.SecretId = json.Get("secretId").String()
 	config.Message = json.Get("message").String()
 
-	// 初始化 IPTree 并利用 AddByString 简化解析
 	ips := json.Get("whiteList").Array()
 	if len(ips) > 0 {
 		tree := iptree.New()
@@ -79,18 +82,16 @@ func parseConfig(json gjson.Result, config *PluginConfig, log log.Log) error {
 		config.SecretId = "default-secret"
 	}
 
-	log.Infof("插件配置加载成功: clientId=%s, 是否开启白名单=%v", config.ClientId, config.WhiteList != nil)
+	log.Infof("插件配置加载成功: clientId=%s, 签名算法=SM3, 是否开启白名单=%v", config.ClientId, config.WhiteList != nil)
 	return nil
 }
 
 // --- 逻辑处理 ---
 
 func onHttpRequestHeaders(ctx wrapper.HttpContext, config PluginConfig, log log.Log) types.Action {
-	// 获取客户端真实 IP
 	remoteAddr, err := proxywasm.GetProperty([]string{"source", "address"})
 	if err == nil {
 		clientIP := string(remoteAddr)
-		// 剥离端口号 (例如 1.2.3.4:5678 -> 1.2.3.4)
 		if idx := strings.LastIndex(clientIP, ":"); idx != -1 {
 			clientIP = clientIP[:idx]
 		}
@@ -106,7 +107,7 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config PluginConfig, log log.
 	proxywasm.ReplaceHttpRequestHeader("X-Client-Id", config.ClientId)
 	proxywasm.ReplaceHttpRequestHeader("X-Secret-Id", config.SecretId)
 
-	// 初始签名（空Body）
+	// 初始 SM3 签名（空Body）
 	sign := calculateSign(config.ClientId, "", config.SecretId)
 	proxywasm.ReplaceHttpRequestHeader("X-Sign", sign)
 	_ = proxywasm.SetProperty([]string{"wasm", "final_sign"}, []byte(sign))
@@ -115,7 +116,6 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config PluginConfig, log log.
 }
 
 func onHttpRequestBody(ctx wrapper.HttpContext, config PluginConfig, body []byte, log log.Log) types.Action {
-	// 如果匹配白名单，跳过签名更新
 	if skip, err := proxywasm.GetProperty([]string{"wasm", "skip_sign"}); err == nil && string(skip) == "true" {
 		return types.ActionContinue
 	}
@@ -129,7 +129,6 @@ func onHttpRequestBody(ctx wrapper.HttpContext, config PluginConfig, body []byte
 }
 
 func onHttpResponseHeaders(ctx wrapper.HttpContext, config PluginConfig, log log.Log) types.Action {
-	// 回传签名以供验证
 	if sign, err := proxywasm.GetProperty([]string{"wasm", "final_sign"}); err == nil {
 		proxywasm.AddHttpResponseHeader("X-Sign", string(sign))
 	}
