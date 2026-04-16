@@ -17,6 +17,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
@@ -31,12 +32,19 @@ import (
 
 func main() {}
 
-// calculateSign 使用国密 SM3 算法计算签名
-func calculateSign(clientId, body, secretId string) string {
+// calculateSign 使用国密 SM3 算法计算签名，并记录耗时
+func calculateSign(log log.Log, clientId, body, secretId string) string {
+	start := time.Now()
+	
 	// 拼接规则保持一致：clientId + body + secretId
 	signStr := fmt.Sprintf("%s%s%s", clientId, body, secretId)
 	hash := sm3.Sum([]byte(signStr))
-	return fmt.Sprintf("%x", hash)
+	sign := fmt.Sprintf("%x", hash)
+	
+	elapsed := time.Since(start)
+	log.Infof("[性能统计] SM3 计算完成, 数据长度: %d 字节, 耗时: %v", len(signStr), elapsed)
+	
+	return sign
 }
 
 // --- 插件初始化 ---
@@ -108,7 +116,7 @@ func onHttpRequestHeaders(ctx wrapper.HttpContext, config PluginConfig, log log.
 	proxywasm.ReplaceHttpRequestHeader("X-Secret-Id", config.SecretId)
 
 	// 初始 SM3 签名（空Body）
-	sign := calculateSign(config.ClientId, "", config.SecretId)
+	sign := calculateSign(log, config.ClientId, "", config.SecretId)
 	proxywasm.ReplaceHttpRequestHeader("X-Sign", sign)
 	_ = proxywasm.SetProperty([]string{"wasm", "final_sign"}, []byte(sign))
 
@@ -121,7 +129,7 @@ func onHttpRequestBody(ctx wrapper.HttpContext, config PluginConfig, body []byte
 	}
 
 	if len(body) > 0 {
-		sign := calculateSign(config.ClientId, string(body), config.SecretId)
+		sign := calculateSign(log, config.ClientId, string(body), config.SecretId)
 		proxywasm.ReplaceHttpRequestHeader("X-Sign", sign)
 		_ = proxywasm.SetProperty([]string{"wasm", "final_sign"}, []byte(sign))
 	}

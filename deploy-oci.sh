@@ -6,7 +6,7 @@ set -e
 # 配置信息
 REGISTRY="172.30.187.161:5000"
 IMAGE_NAME="higress-wasm-plugin-demo"
-VERSION="2.6.0"
+VERSION="2.8.0"
 
 echo "============================================"
 echo "Higress WASM Plugin - 标准化 OCI 部署"

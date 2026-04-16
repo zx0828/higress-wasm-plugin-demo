@@ -4,7 +4,7 @@ set -e
 
 # --- 配置区 ---
 PLUGIN_NAME="higress-wasm-plugin-demo"
-VERSION="2.6.0"
+VERSION="2.8.0"
 BASE_DIR="/app/plugin-server"
 TARGET_DIR="${BASE_DIR}/${PLUGIN_NAME}/${VERSION}"
 SERVER_PORT="8085" # 宿主机访问端口
@@ -36,15 +36,12 @@ HOST_IP=$(hostname -I | awk '{print $1}')
 
 echo "--------------------------------------------"
 echo "部署完成！请在 Higress 控制台填入以下信息："
-
 echo ""
 echo "镜像地址 (URL):"
 echo "http://${HOST_IP}:${SERVER_PORT}/plugins/${PLUGIN_NAME}/${VERSION}/plugin.wasm"
-
 echo ""
 echo "SHA256 校验和:"
 echo "${SHA256}"
-
 echo ""
 echo "容器内部访问地址 (若已加入同一网络):"
 echo "http://higress-plugin-server:8080/plugins/${PLUGIN_NAME}/${VERSION}/plugin.wasm"
