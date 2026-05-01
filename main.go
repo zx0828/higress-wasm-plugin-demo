@@ -1,20 +1,8 @@
-// Copyright (c) 2022 Alibaba Group Holding Ltd.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package main
 
 import (
+	"crypto/hmac"
+	"crypto/sha1"
 	"fmt"
 	"strings"
 	"time"
@@ -22,127 +10,155 @@ import (
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm"
 	"github.com/higress-group/proxy-wasm-go-sdk/proxywasm/types"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	"github.com/higress-group/wasm-go/pkg/log"
 	"github.com/higress-group/wasm-go/pkg/wrapper"
-	"github.com/zmap/go-iptree/iptree"
-
-	"higress-wasm-plugin-demo/pkg/sm3" // 使用内建高性能 SM3 包
 )
 
 func main() {}
 
-// calculateSign 使用国密 SM3 算法计算签名，并记录耗时
-func calculateSign(log log.Log, clientId, body, secretId string) string {
-	start := time.Now()
-	
-	// 拼接规则保持一致：clientId + body + secretId
-	signStr := fmt.Sprintf("%s%s%s", clientId, body, secretId)
-	hash := sm3.Sum([]byte(signStr))
-	sign := fmt.Sprintf("%x", hash)
-	
-	elapsed := time.Since(start)
-	log.Infof("[性能统计] SM3 计算完成, 数据长度: %d 字节, 耗时: %v", len(signStr), elapsed)
-	
-	return sign
+// generateSign 生成 HMAC-SHA1 签名: sign = HMAC-SHA1(sk, ak + timestamp)
+func generateSign(ak, sk, timestamp string) string {
+	plainText := ak + timestamp
+	mac := hmac.New(sha1.New, []byte(sk))
+	mac.Write([]byte(plainText))
+	return fmt.Sprintf("%x", mac.Sum(nil))
 }
 
-// --- 插件初始化 ---
 func init() {
 	wrapper.SetCtx(
-		"higress-wasm-plugin-demo",
+		"mcp-signature",
 		wrapper.ParseConfigBy(parseConfig),
 		wrapper.ProcessRequestHeadersBy(onHttpRequestHeaders),
 		wrapper.ProcessRequestBodyBy(onHttpRequestBody),
-		wrapper.ProcessResponseHeadersBy(onHttpResponseHeaders),
 	)
 }
 
-// --- 配置定义 ---
 type PluginConfig struct {
-	ClientId  string         `json:"clientId"`
-	SecretId  string         `json:"secretId"`
-	WhiteList *iptree.IPTree `json:"whiteList"`
-	Message   string         `json:"message"`
+	PathPrefixes []string `json:"pathPrefixes"`
+	AccessKey    string   `json:"accessKey"`
+	AccessSecret string   `json:"accessSecret"`
+	Timestamp    string   `json:"timestamp"`
 }
 
 func parseConfig(json gjson.Result, config *PluginConfig, log log.Log) error {
-	config.ClientId = json.Get("clientId").String()
-	config.SecretId = json.Get("secretId").String()
-	config.Message = json.Get("message").String()
-
-	ips := json.Get("whiteList").Array()
-	if len(ips) > 0 {
-		tree := iptree.New()
-		for _, ipStr := range ips {
-			str := ipStr.String()
-			if err := tree.AddByString(str, struct{}{}); err != nil {
-				log.Errorf("添加 IP 到白名单失败 %s: %v", str, err)
-			}
-		}
-		config.WhiteList = tree
+	// 从 YAML 配置中读取拦截路径前缀
+	for _, item := range json.Get("pathPrefixes").Array() {
+		config.PathPrefixes = append(config.PathPrefixes, item.String())
+	}
+	// 如果没配，默认只拦截 /mcp/ 开头的请求
+	if len(config.PathPrefixes) == 0 {
+		config.PathPrefixes = []string{"/mcp/"}
 	}
 
-	if config.ClientId == "" {
-		config.ClientId = "default-client"
+	// 从 YAML 配置中读取密钥
+	config.AccessKey = json.Get("accessKey").String()
+	config.AccessSecret = json.Get("accessSecret").String()
+	config.Timestamp = json.Get("timestamp").String()
+	
+	// 如果 YAML 没配，使用默认 fallback
+	if config.AccessKey == "" {
+		config.AccessKey = "a4918add974342fb9a4e99ddda3008ce"
 	}
-	if config.SecretId == "" {
-		config.SecretId = "default-secret"
+	if config.AccessSecret == "" {
+		config.AccessSecret = "330000_yczx1958770414929416198"
 	}
-
-	log.Infof("插件配置加载成功: clientId=%s, 签名算法=SM3, 是否开启白名单=%v", config.ClientId, config.WhiteList != nil)
+	
+	log.Infof("[SignaturePlugin] 插件配置加载成功: 拦截路径=%v, accessKey=%s", config.PathPrefixes, config.AccessKey)
 	return nil
 }
 
-// --- 逻辑处理 ---
-
 func onHttpRequestHeaders(ctx wrapper.HttpContext, config PluginConfig, log log.Log) types.Action {
-	remoteAddr, err := proxywasm.GetProperty([]string{"source", "address"})
-	if err == nil {
-		clientIP := string(remoteAddr)
-		if idx := strings.LastIndex(clientIP, ":"); idx != -1 {
-			clientIP = clientIP[:idx]
-		}
-
-		if config.WhiteList != nil {
-			if _, matched, errMatch := config.WhiteList.GetByString(clientIP); errMatch == nil && matched {
-				log.Infof("[白名单] 匹配成功: IP %s 在白名单中，将跳过请求体签名", clientIP)
-				_ = proxywasm.SetProperty([]string{"wasm", "skip_sign"}, []byte("true"))
-			}
-		}
+	// 1. 判断是否是目标 MCP 请求
+	origPath, _ := proxywasm.GetHttpRequestHeader("x-envoy-original-path")
+	if origPath == "" {
+		origPath, _ = proxywasm.GetHttpRequestHeader(":path")
 	}
 
-	proxywasm.ReplaceHttpRequestHeader("X-Client-Id", config.ClientId)
-	proxywasm.ReplaceHttpRequestHeader("X-Secret-Id", config.SecretId)
+	matched := false
+	for _, pr := range config.PathPrefixes {
+		if strings.HasPrefix(origPath, pr) {
+			matched = true
+			break
+		}
+	}
+	
+	// 如果不是目标路径，直接放行，完全不消耗性能，也不修改任何数据
+	if !matched {
+		return types.ActionContinue
+	}
 
-	// 初始 SM3 签名（空Body）
-	sign := calculateSign(log, config.ClientId, "", config.SecretId)
-	proxywasm.ReplaceHttpRequestHeader("X-Sign", sign)
-	_ = proxywasm.SetProperty([]string{"wasm", "final_sign"}, []byte(sign))
+	// 2. 开始执行 MCP 签名逻辑
+	// 优先级 1: 从请求头获取传入的 timestamp
+	timestamp, _ := proxywasm.GetHttpRequestHeader("timestamp")
+	
+	if timestamp == "" {
+		// 优先级 2: 从 YAML 配置获取 timestamp
+		if config.Timestamp != "" {
+			timestamp = config.Timestamp
+		} else {
+			// 优先级 3: 默认生成当前时间戳（毫秒）
+			timestamp = fmt.Sprintf("%d", time.Now().UnixMilli())
+		}
+	}
+	
+	sign := generateSign(config.AccessKey, config.AccessSecret, timestamp)
 
+	// 存入上下文，供 Body 阶段注入到 JSON-RPC 结构中
+	ctx.SetContext("ak", config.AccessKey)
+	ctx.SetContext("sk", config.AccessSecret)
+	ctx.SetContext("sn", sign)
+	ctx.SetContext("ts", timestamp)
+
+	log.Infof("[SignaturePlugin] 签名计算完成: ak=%s, ts=%s, sign=%s", config.AccessKey, timestamp, sign)
 	return types.ActionContinue
 }
 
 func onHttpRequestBody(ctx wrapper.HttpContext, config PluginConfig, body []byte, log log.Log) types.Action {
-	if skip, err := proxywasm.GetProperty([]string{"wasm", "skip_sign"}); err == nil && string(skip) == "true" {
+	// 如果 Header 阶段没有拦截（或者没计算出 ak），这里直接放行
+	akInter := ctx.GetContext("ak")
+	if akInter == nil {
 		return types.ActionContinue
 	}
 
-	if len(body) > 0 {
-		sign := calculateSign(log, config.ClientId, string(body), config.SecretId)
-		proxywasm.ReplaceHttpRequestHeader("X-Sign", sign)
-		_ = proxywasm.SetProperty([]string{"wasm", "final_sign"}, []byte(sign))
-	}
-	return types.ActionContinue
-}
+	ak := akInter.(string)
+	sk := ctx.GetContext("sk").(string)
+	sn := ctx.GetContext("sn").(string)
+	ts := ctx.GetContext("ts").(string)
 
-func onHttpResponseHeaders(ctx wrapper.HttpContext, config PluginConfig, log log.Log) types.Action {
-	if sign, err := proxywasm.GetProperty([]string{"wasm", "final_sign"}); err == nil {
-		proxywasm.AddHttpResponseHeader("X-Sign", string(sign))
+	// 校验是否是 MCP JSON-RPC 结构
+	res := gjson.GetBytes(body, "params")
+	if !res.Exists() {
+		return types.ActionContinue
 	}
-	proxywasm.AddHttpResponseHeader("X-Client-Id", config.ClientId)
-	if config.Message != "" {
-		proxywasm.AddHttpResponseHeader("X-Wasm-Message", config.Message)
+
+	// 智能探测 arguments 的 JSON 路径
+	argPath := "params.arguments"
+	if res.IsArray() {
+		argPath = "params.0.arguments"
 	}
+
+	updatedBody := body
+	var err error
+	
+	// 精准注入所有签名参数到 JSON-RPC arguments 中
+	updatedBody, err = sjson.SetBytes(updatedBody, argPath+".accessKey", ak)
+	if err == nil { updatedBody, err = sjson.SetBytes(updatedBody, argPath+".accessSecret", sk) }
+	if err == nil { updatedBody, err = sjson.SetBytes(updatedBody, argPath+".sign", sn) }
+	if err == nil { updatedBody, err = sjson.SetBytes(updatedBody, argPath+".timestamp", ts) }
+
+	if err != nil {
+		log.Errorf("[SignaturePlugin] 注入参数到 JSON-RPC 失败: %v", err)
+		return types.ActionContinue
+	}
+
+	err = proxywasm.ReplaceHttpRequestBody(updatedBody)
+	if err != nil {
+		log.Errorf("[SignaturePlugin] 替换 Body 失败: %v", err)
+	} else {
+		log.Infof("[SignaturePlugin] 成功将签名参数注入 MCP arguments: %s", argPath)
+	}
+
 	return types.ActionContinue
 }

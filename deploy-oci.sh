@@ -5,8 +5,8 @@ set -e
 
 # 配置信息
 REGISTRY="172.30.187.161:5000"
-IMAGE_NAME="higress-wasm-plugin-demo"
-VERSION="2.8.0"
+IMAGE_NAME="higress-mcp-signature-plugin"
+VERSION="1.0.0"
 
 echo "============================================"
 echo "Higress WASM Plugin - 标准化 OCI 部署"
@@ -22,7 +22,7 @@ echo ""
 echo "[步骤 2/3] 构建符合规范的镜像..."
 docker build \
   --label "org.opencontainers.image.title=${IMAGE_NAME}" \
-  --label "org.opencontainers.image.description=A demo wasm plugin with IPTree whitelist and signing" \
+  --label "org.opencontainers.image.description=Enterprise MCP Signature Plugin for Higress" \
   --label "org.opencontainers.image.version=${VERSION}" \
   -t ${REGISTRY}/${IMAGE_NAME}:${VERSION} .
 

@@ -8,12 +8,12 @@ echo "✓ 编译成功: main.wasm"
 
 # 2. 拷贝到容器
 echo "==> [2/2] 正在拷贝到 higress-ai 容器..."
-docker cp main.wasm higress-ai:/tmp/higress-wasm-plugin-demo.wasm
-echo "✓ 拷贝完成: /tmp/higress-wasm-plugin-demo.wasm"
+docker cp main.wasm higress-ai:/tmp/higress-mcp-signature-plugin.wasm
+echo "✓ 拷贝完成: /tmp/higress-mcp-signature-plugin.wasm"
 
 # 3. 验证并显示文件信息
 echo ""
 echo "项目状态:"
-docker exec higress-ai ls -lh /tmp/higress-wasm-plugin-demo.wasm
+docker exec higress-ai ls -lh /tmp/higress-mcp-signature-plugin.wasm
 echo ""
 echo "部署完成！Higress 会自动热加载该文件。"
